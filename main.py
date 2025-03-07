@@ -33,8 +33,18 @@ print(nan_rows[['지역코드', '위도', '경도']])
 df_population_asan['인구밀도평균'] = df_population_asan['인구밀도'].rolling(window=5, center=True, min_periods=1).mean()
 df_population_asan['밀도차이'] = df_population_asan['인구밀도'] - df_population_asan['인구밀도평균']
 
-# 상대적으로 밀도가 높은 지역 선택 (밀도 차이가 상위 10% 이상인 지역)
-high_density_areas = df_population_asan[df_population_asan['밀도차이'] > df_population_asan['밀도차이'].quantile(0.9)].copy()
+# 상대적으로 밀도가 높은 지역 선택 (기본적으로 상위 20% 기준)
+density_threshold = 0.8
+high_density_areas = df_population_asan[df_population_asan['밀도차이'] > df_population_asan['밀도차이'].quantile(density_threshold)].copy()
+
+# 최소 추천 개수 유지 (예: 최소 30개 지역 이상)
+min_recommendations = 30
+
+while len(high_density_areas) < min_recommendations and density_threshold > 0.5:
+    density_threshold -= 0.05  # 기준을 5%씩 완화
+    high_density_areas = df_population_asan[df_population_asan['밀도차이'] > df_population_asan['밀도차이'].quantile(density_threshold)].copy()
+
+print(f"최종 밀도 차이 기준: {density_threshold}, 추천 지역 개수: {len(high_density_areas)}")
 
 # high_density_areas에서 위도/경도 없는 데이터 확인
 print("high_density_areas에서 위도/경도 없는 데이터 개수:", high_density_areas['위도'].isna().sum())
@@ -45,6 +55,7 @@ df_child_safety = df_child_safety[['소재지도로명주소', '경도', '위도
 
 # 보호구역과 일정 거리(500m 이상) 떨어진 지역 찾기
 safe_high_density_areas = []
+removed_count = 0  # 보호구역에 의해 삭제된 개수 카운트
 safety_distance = 0.5  # 500m
 
 for _, pop_row in high_density_areas.iterrows():
@@ -61,6 +72,7 @@ for _, pop_row in high_density_areas.iterrows():
 
             if distance < safety_distance:
                 is_safe = False
+                removed_count += 1  # 보호구역에 의해 삭제된 데이터 개수 증가
                 break
         except:
             continue
@@ -70,6 +82,9 @@ for _, pop_row in high_density_areas.iterrows():
 
 # 안전한 고밀도 지역을 데이터프레임으로 변환
 df_safe_high_density_areas = pd.DataFrame(safe_high_density_areas)
+
+# 보호구역으로 인해 삭제된 데이터 개수 출력
+print(f"어린이 보호구역에 의해 삭제된 데이터 개수: {removed_count}")
 
 # 좌표가 없는 경우 강제 종료
 if len(df_safe_high_density_areas) == 0:
