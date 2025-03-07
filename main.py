@@ -108,7 +108,7 @@ for i in range(len(df_safe_high_density_areas)):
     if i in visited:
         continue
     selected_indices.append(i)
-    _, neighbors = tree.query(coordinates[i], k=2)  # 가까운 5개 점 조회
+    _, neighbors = tree.query(coordinates[i], k=2)  # 가까운 2개 점 조회
     visited.update(neighbors)
 
 selected_final_areas = df_safe_high_density_areas.iloc[selected_indices]
