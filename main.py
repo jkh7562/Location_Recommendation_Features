@@ -53,10 +53,10 @@ print("high_density_areas에서 위도/경도 없는 데이터 개수:", high_de
 df_child_safety = pd.read_csv(child_safety_zone_file, encoding='cp949')  # 인코딩 오류 방지
 df_child_safety = df_child_safety[['소재지도로명주소', '경도', '위도']].dropna()  # 필요한 컬럼만 선택
 
-# 보호구역과 일정 거리(500m 이상) 떨어진 지역 찾기
+# 보호구역과 일정 거리(300m 이상) 떨어진 지역 찾기
 safe_high_density_areas = []
 removed_count = 0  # 보호구역에 의해 삭제된 개수 카운트
-safety_distance = 0.5  # 500m
+safety_distance = 0.3  # 300m
 
 for _, pop_row in high_density_areas.iterrows():
     if pd.isna(pop_row['위도']) or pd.isna(pop_row['경도']):
@@ -108,7 +108,7 @@ for i in range(len(df_safe_high_density_areas)):
     if i in visited:
         continue
     selected_indices.append(i)
-    _, neighbors = tree.query(coordinates[i], k=5)  # 가까운 5개 점 조회
+    _, neighbors = tree.query(coordinates[i], k=2)  # 가까운 5개 점 조회
     visited.update(neighbors)
 
 selected_final_areas = df_safe_high_density_areas.iloc[selected_indices]
