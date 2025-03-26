@@ -112,7 +112,7 @@ coords = np.radians(df_final_filtered[['위도', '경도']].values)
 
 # 미터 단위를 라디안으로 변환
 EARTH_RADIUS_KM = 6371  # 지구 반지름 (km)
-epsilon_meters = 400  # 300m로 설정
+epsilon_meters = 400  # 400m로 설정
 epsilon_radians = (epsilon_meters / 1000) / EARTH_RADIUS_KM  # 미터 -> km -> 라디안
 min_samples = 5
 
@@ -144,6 +144,30 @@ print(final_recommendations)
 # 결과를 파일로 저장
 final_recommendations.to_csv("data/산출데이터/추천_수거함_위치.csv", index=False, encoding='utf-8-sig')
 print(f"\n💾 추천 좌표가 '추천_수거함_위치.csv'에 저장되었습니다.")
+
+# === Spring Boot로 데이터 전송 ===
+# CSV 파일 읽기
+recommended_locations = pd.read_csv("data/산출데이터/추천_수거함_위치.csv")
+
+# 데이터프레임을 JSON 형식으로 변환
+# '위도'와 '경도'를 'location' 형식으로 변환 (예: "POINT (경도 위도)")
+recommended_locations['location'] = recommended_locations.apply(
+    lambda row: f"POINT ({row['경도']} {row['위도']})", axis=1
+)
+# 필요한 컬럼만 선택 (Spring Boot에서 기대하는 형식에 맞게)
+data_to_send = recommended_locations[['location']].to_dict('records')
+
+# Spring Boot 서버로 POST 요청 전송
+url = "http://localhost:8081/admin/saveRecommendedBoxes"  # Spring Boot 엔드포인트
+headers = {"Content-Type": "application/json"}
+
+try:
+    response = requests.post(url, json=data_to_send, headers=headers)
+    response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+    print("✅ Spring Boot로 추천 위치 전송 성공")
+    print(f"서버 응답: {response.text}")
+except Exception as e:
+    print(f"❌ Spring Boot로 전송 실패: {e}")
 
 # === 시각화 ===
 plt.figure(figsize=(10, 6))
