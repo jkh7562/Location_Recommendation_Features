@@ -4,9 +4,9 @@ from scipy.spatial import cKDTree
 from geopy.distance import geodesic
 
 # 데이터 파일 경로
-population_density_file = "data/34040_2023년_인구총괄(인구밀도).txt"
-child_safety_zone_file = "data/전국어린이보호구역표준데이터.csv"
-geo_mapping_file = "아산시_지역코드_좌표.csv"  # 지역코드 ↔ 위경도 매핑
+population_density_file = "data/데이터초안/34040_2023년_인구총괄(인구밀도).txt"
+child_safety_zone_file = "data/데이터초안/전국어린이보호구역표준데이터.csv"
+geo_mapping_file = "data/산출데이터/아산시_지역코드_좌표.csv"  # 지역코드 ↔ 위경도 매핑
 
 # 인구 밀도 데이터 로드
 df_population = pd.read_csv(population_density_file, delimiter='^', header=None, names=['연도', '지역코드', '지표코드', '인구밀도'])

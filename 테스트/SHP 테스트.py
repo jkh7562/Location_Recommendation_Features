@@ -1,7 +1,7 @@
 import geopandas as gpd
 
 # SHP 파일 경로
-shp_file = "data/bnd_oa_34040_2024_2Q.shp"
+shp_file = "../data/경계데이터/bnd_oa_34040_2024_2Q.shp"
 
 # SHP 파일 로드 (속성 데이터만 가져오기)
 gdf = gpd.read_file(shp_file, ignore_geometry=True)
