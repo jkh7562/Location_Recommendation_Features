@@ -11,7 +11,7 @@ import time
 import geopandas as gpd
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:3000", "supports_credentials": True}})
+CORS(app, resources={r"/*": {"origins": "http://localhost:8081"}})
 
 # 📌 Kakao REST API Key
 KAKAO_API_KEY = "a3eeb1b4ef391f6495af9674ae083e2d"
