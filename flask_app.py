@@ -169,5 +169,13 @@ def compare_existing_with_recommended():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/upload-multiple', methods=['POST'])
+def upload_multiple_files():
+    files = request.files.getlist("files")  # 'files'라는 key로 받아야 함
+    for file in files:
+        print(f"파일 이름: {file.filename}")
+        file.save(os.path.join("data/업로드", file.filename))
+    return jsonify({"message": "파일 업로드 성공 ✅"}), 200
+
 if __name__ == '__main__':
     app.run(port=5000)
