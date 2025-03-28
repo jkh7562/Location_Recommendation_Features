@@ -1,4 +1,5 @@
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 import pandas as pd
 import numpy as np
 from geopy.distance import geodesic
@@ -6,8 +7,33 @@ from sklearn.cluster import DBSCAN
 import os
 import matplotlib.pyplot as plt
 import requests
+import time
+import geopandas as gpd
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# 📌 Kakao REST API Key
+KAKAO_API_KEY = "a3eeb1b4ef391f6495af9674ae083e2d"
+
+# 📌 주소 → 좌표 변환 함수
+def kakao_geocode(address):
+    url = "https://dapi.kakao.com/v2/local/search/address.json"
+    headers = { "Authorization": f"KakaoAK {KAKAO_API_KEY}" }
+    params = { "query": address }
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=5)
+        result = response.json()
+        if result["documents"]:
+            first = result["documents"][0]
+            return float(first["y"]), float(first["x"])  # 위도, 경도
+        else:
+            return None, None
+    except Exception as e:
+        print(f"❌ 주소 변환 실패: {address} / {e}")
+        return None, None
+
 
 # ✅ 1. 추천 알고리즘 실행 API
 @app.route('/recommend', methods=['POST'])
@@ -171,11 +197,102 @@ def compare_existing_with_recommended():
 
 @app.route('/upload-multiple', methods=['POST'])
 def upload_multiple_files():
-    files = request.files.getlist("files")  # 'files'라는 key로 받아야 함
-    for file in files:
-        print(f"파일 이름: {file.filename}")
-        file.save(os.path.join("data/업로드", file.filename))
-    return jsonify({"message": "파일 업로드 성공 ✅"}), 200
+    try:
+        files = request.files
+        print("📥 수신된 파일 목록:", list(files.keys()))
+
+        save_dir = "data/데이터초안"
+        os.makedirs(save_dir, exist_ok=True)
+
+        # 🔥 기존 파일 삭제
+        for filename in os.listdir(save_dir):
+            file_path = os.path.join(save_dir, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f"🗑️ 기존 파일 삭제됨: {file_path}")
+            except Exception as e:
+                print(f"⚠️ 파일 삭제 오류: {file_path} / {e}")
+
+        saved_paths = {}
+
+        for key in files:
+            file = files[key]
+            save_path = os.path.join(save_dir, file.filename)
+            file.save(save_path)
+            saved_paths[key] = save_path
+            print(f"✅ 저장됨: {key} → {save_path}")
+
+        # 🔄 소방서 주소 → 좌표 변환 처리
+        if "fireStation" in files:
+            print("📌 [자동 처리] 소방서 주소 → 좌표 변환 중...")
+            fire_file_path = saved_paths["fireStation"]
+            df = pd.read_csv(fire_file_path, encoding="cp949")
+
+            from time import sleep
+            from tqdm import tqdm
+            import requests
+
+            def kakao_geocode(address):
+                url = "https://dapi.kakao.com/v2/local/search/address.json"
+                headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
+                params = {"query": address}
+                try:
+                    res = requests.get(url, headers=headers, params=params, timeout=5)
+                    result = res.json()
+                    if result["documents"]:
+                        first = result["documents"][0]
+                        return float(first["y"]), float(first["x"])
+                    return None, None
+                except Exception as e:
+                    print(f"❌ 에러: {address} / {e}")
+                    return None, None
+
+            latitudes, longitudes, failed = [], [], []
+            for _, row in tqdm(df.iterrows(), total=len(df)):
+                address = str(row["주소"]).strip()
+                lat, lng = kakao_geocode(address)
+                latitudes.append(lat)
+                longitudes.append(lng)
+                if lat is None or lng is None:
+                    failed.append(address)
+                sleep(0.3)
+
+            df["위도"] = latitudes
+            df["경도"] = longitudes
+            os.makedirs("data/산출데이터", exist_ok=True)
+            df.to_csv("data/산출데이터/소방서_좌표_카카오.csv", index=False, encoding="utf-8-sig")
+            print("✅ 소방서 주소 변환 완료")
+
+        # 🔄 SHP → 중심 좌표 추출 처리
+        if "boundaryshp" in files:
+            print("📌 [자동 처리] SHP → 중심 좌표 추출 중...")
+            import geopandas as gpd
+
+            shp_path = saved_paths["boundaryshp"]
+            gdf = gpd.read_file(shp_path)
+            if gdf.crs != "EPSG:4326":
+                gdf = gdf.to_crs(epsg=4326)
+
+            gdf["위도"] = gdf.geometry.centroid.y
+            gdf["경도"] = gdf.geometry.centroid.x
+            region_col = "TOT_REG_CD"
+            df_geo = gdf[[region_col, "위도", "경도"]].rename(columns={region_col: "지역코드"})
+            os.makedirs("data/산출데이터", exist_ok=True)
+            df_geo.to_csv("data/산출데이터/아산시_지역코드_좌표.csv", index=False, encoding="utf-8-sig")
+            print("✅ SHP 중심 좌표 추출 완료")
+
+        # ✅ 추천 알고리즘 자동 실행
+        print("🚀 [후처리] 추천 알고리즘 자동 실행 시작")
+        with app.test_request_context():
+            res = recommend()
+            print("🎯 추천 알고리즘 자동 실행 완료")
+
+        return jsonify({"message": "모든 파일 업로드 및 자동 변환 완료 ✅"}), 200
+
+    except Exception as e:
+        print(f"❌ 업로드 오류: {e}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5000)
