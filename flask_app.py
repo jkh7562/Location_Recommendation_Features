@@ -11,7 +11,7 @@ import time
 import geopandas as gpd
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "http://localhost:3000", "supports_credentials": True}})
 
 # 📌 Kakao REST API Key
 KAKAO_API_KEY = "a3eeb1b4ef391f6495af9674ae083e2d"
@@ -144,7 +144,7 @@ def recommend():
         return jsonify({"error": str(e)}), 500
 
 # ✅ 2. 기존 수거함과 비교하여 필터링된 추천 좌표 반환 API
-@app.route('/recommend/compare', methods=['GET'])
+@app.route('/recommend/compare', methods=['POST'])
 def compare_existing_with_recommended():
     try:
         print("📌 [compare] 기존 수거함과 추천 위치 비교 시작")
