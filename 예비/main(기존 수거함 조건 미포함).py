@@ -6,10 +6,10 @@ import matplotlib.pyplot as plt  # 시각화를 위해 추가
 import requests  # HTTP 요청을 위해 추가
 
 # === 파일 경로 ===
-population_density_file = "data/데이터초안/34040_2023년_인구총괄(인구밀도).txt"
-child_safety_zone_file = "data/데이터초안/전국어린이보호구역표준데이터.csv"
-geo_mapping_file = "data/산출데이터/아산시_지역코드_좌표.csv"
-fire_station_file = "data/산출데이터/소방서_좌표_카카오.csv"  # 위도, 경도 포함된 소방서 데이터
+population_density_file = "../data/데이터초안/34040_2023년_인구총괄(인구밀도).txt"
+child_safety_zone_file = "../data/데이터초안/전국어린이보호구역표준데이터.csv"
+geo_mapping_file = "../data/산출데이터/아산시_지역코드_좌표.csv"
+fire_station_file = "../data/산출데이터/소방서_좌표_카카오.csv"  # 위도, 경도 포함된 소방서 데이터
 
 # === 인구 밀도 데이터 로드 ===
 df_population = pd.read_csv(population_density_file, delimiter='^', header=None,
@@ -125,7 +125,7 @@ print(f"\n💾 추천 좌표가 '추천_수거함_위치.csv'에 저장되었습
 
 # === Spring Boot로 데이터 전송 ===
 # CSV 파일 읽기
-recommended_locations = pd.read_csv("data/산출데이터/추천_수거함_위치.csv")
+recommended_locations = pd.read_csv("../data/산출데이터/추천_수거함_위치.csv")
 
 # 데이터프레임을 JSON 형식으로 변환
 # '위도'와 '경도'를 'location' 형식으로 변환 (예: "POINT (경도 위도)")
