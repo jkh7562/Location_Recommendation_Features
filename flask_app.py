@@ -43,9 +43,9 @@ def recommend():
 
         # === 파일 경로 설정 ===
         base_path = os.path.dirname(__file__)
-        population_density_file = os.path.join(base_path, "data/데이터초안/34040_2023년_인구총괄(인구밀도).txt")
+        population_density_file = os.path.join(base_path, "data/데이터초안/인구밀도 데이터.txt")
         child_safety_zone_file = os.path.join(base_path, "data/데이터초안/전국어린이보호구역표준데이터.csv")
-        geo_mapping_file = os.path.join(base_path, "data/산출데이터/아산시_지역코드_좌표.csv")
+        geo_mapping_file = os.path.join(base_path, "data/산출데이터/지역코드_좌표.csv")
         fire_station_file = os.path.join(base_path, "data/산출데이터/소방서_좌표_카카오.csv")
         result_output_file = os.path.join(base_path, "data/산출데이터/추천_수거함_위치.csv")
 
@@ -219,6 +219,10 @@ def upload_multiple_files():
         for key in files:
             file = files[key]
             save_path = os.path.join(save_dir, file.filename)
+
+            # 인구밀도 데이터 파일 이름 변경 처리
+            if key == "population":
+                save_path = os.path.join(save_dir, "인구밀도 데이터.txt")  # 이름 변경
             file.save(save_path)
             saved_paths[key] = save_path
             print(f"✅ 저장됨: {key} → {save_path}")
@@ -279,7 +283,7 @@ def upload_multiple_files():
             region_col = "TOT_REG_CD"
             df_geo = gdf[[region_col, "위도", "경도"]].rename(columns={region_col: "지역코드"})
             os.makedirs("data/산출데이터", exist_ok=True)
-            df_geo.to_csv("data/산출데이터/아산시_지역코드_좌표.csv", index=False, encoding="utf-8-sig")
+            df_geo.to_csv("data/산출데이터/지역코드_좌표.csv", index=False, encoding="utf-8-sig")
             print("✅ SHP 중심 좌표 추출 완료")
 
         # ✅ 추천 알고리즘 자동 실행
