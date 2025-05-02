@@ -9,12 +9,17 @@ import matplotlib.pyplot as plt
 import requests
 import time
 import geopandas as gpd
+from dotenv import load_dotenv
+
+# .env 파일 로드
+load_dotenv()
+
+# 환경 변수 로드
+KAKAO_API_KEY = os.getenv("KAKAO_API_KEY")
+BACKEND_ORIGIN = os.getenv("BACKEND_ORIGIN")
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:8081"}})
-
-# 📌 Kakao REST API Key
-KAKAO_API_KEY = "a3eeb1b4ef391f6495af9674ae083e2d"
 
 # 📌 주소 → 좌표 변환 함수
 def kakao_geocode(address):
@@ -150,8 +155,8 @@ def compare_existing_with_recommended():
         print("📌 [compare] 기존 수거함과 추천 위치 비교 시작")
 
         # === Spring Boot에서 기존 수거함 좌표 데이터 가져오기 ===
-        spring_url = "http://localhost:8081/admin/findAllBox"
-        response = requests.get(spring_url)
+        spring_url = f"{BACKEND_ORIGIN}/admin/findAllBox"
+        response = requests.get(spring_url, verify=False)
         response.raise_for_status()
         existing_boxes = response.json()
         print(f"📦 기존 수거함 수: {len(existing_boxes)}")
@@ -235,22 +240,6 @@ def upload_multiple_files():
 
             from time import sleep
             from tqdm import tqdm
-            import requests
-
-            def kakao_geocode(address):
-                url = "https://dapi.kakao.com/v2/local/search/address.json"
-                headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
-                params = {"query": address}
-                try:
-                    res = requests.get(url, headers=headers, params=params, timeout=5)
-                    result = res.json()
-                    if result["documents"]:
-                        first = result["documents"][0]
-                        return float(first["y"]), float(first["x"])
-                    return None, None
-                except Exception as e:
-                    print(f"❌ 에러: {address} / {e}")
-                    return None, None
 
             latitudes, longitudes, failed = [], [], []
             for _, row in tqdm(df.iterrows(), total=len(df)):
@@ -271,8 +260,6 @@ def upload_multiple_files():
         # 🔄 SHP → 중심 좌표 추출 처리
         if "boundaryshp" in files:
             print("📌 [자동 처리] SHP → 중심 좌표 추출 중...")
-            import geopandas as gpd
-
             shp_path = saved_paths["boundaryshp"]
             gdf = gpd.read_file(shp_path)
             if gdf.crs != "EPSG:4326":
