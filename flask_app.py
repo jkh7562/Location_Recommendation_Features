@@ -21,11 +21,12 @@ BACKEND_ORIGIN = os.getenv("BACKEND_ORIGIN")
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "http://localhost:8081"}})
 
+
 # 📌 주소 → 좌표 변환 함수
 def kakao_geocode(address):
     url = "https://dapi.kakao.com/v2/local/search/address.json"
-    headers = { "Authorization": f"KakaoAK {KAKAO_API_KEY}" }
-    params = { "query": address }
+    headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
+    params = {"query": address}
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=5)
@@ -38,6 +39,73 @@ def kakao_geocode(address):
     except Exception as e:
         print(f"❌ 주소 변환 실패: {address} / {e}")
         return None, None
+
+
+# ✅ 소방서 및 어린이보호구역 좌표만 반환하는 API
+@app.route('/get-coordinates', methods=['GET'])
+def get_coordinates():
+    try:
+        print("📌 소방서 및 어린이보호구역 좌표 요청 수신")
+
+        # 데이터 경로 설정
+        base_path = os.path.dirname(__file__)
+        fire_station_file = os.path.join(base_path, "data/산출데이터/소방서_좌표_카카오.csv")
+        child_safety_file = os.path.join(base_path, "data/데이터초안/전국어린이보호구역표준데이터.csv")
+
+        # 소방서 좌표 로드
+        fire_stations = []
+        if os.path.exists(fire_station_file):
+            try:
+                df_fire = pd.read_csv(fire_station_file)
+                # 좌표만 추출 (주소 정보 제외)
+                for _, row in df_fire.iterrows():
+                    if not pd.isna(row['위도']) and not pd.isna(row['경도']):
+                        fire_stations.append([float(row['위도']), float(row['경도'])])
+                print(f"✅ 소방서 좌표 {len(fire_stations)}개 로드 완료")
+            except Exception as e:
+                print(f"❌ 소방서 데이터 로드 오류: {e}")
+
+        # 어린이보호구역 좌표 로드
+        safety_zones = []
+        if os.path.exists(child_safety_file):
+            try:
+                # 인코딩 문제가 있을 수 있으므로 여러 인코딩 시도
+                encodings = ['utf-8', 'euc-kr', 'cp949']
+                df_safety = None
+
+                for encoding in encodings:
+                    try:
+                        df_safety = pd.read_csv(child_safety_file, encoding=encoding)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+
+                if df_safety is not None:
+                    # 위도, 경도 컬럼 찾기
+                    lat_col = None
+                    lng_col = None
+                    for col in df_safety.columns:
+                        if '위도' in col:
+                            lat_col = col
+                        elif '경도' in col:
+                            lng_col = col
+
+                    # 좌표만 추출 (주소 정보 제외)
+                    for _, row in df_safety.iterrows():
+                        if lat_col and lng_col and not pd.isna(row[lat_col]) and not pd.isna(row[lng_col]):
+                            safety_zones.append([float(row[lat_col]), float(row[lng_col])])
+                    print(f"✅ 어린이보호구역 좌표 {len(safety_zones)}개 로드 완료")
+            except Exception as e:
+                print(f"❌ 어린이보호구역 데이터 로드 오류: {e}")
+
+        return jsonify({
+            'fireStations': fire_stations,
+            'safetyZones': safety_zones
+        })
+
+    except Exception as e:
+        print(f"❌ 좌표 데이터 처리 오류: {e}")
+        return jsonify({'error': str(e)}), 500
 
 
 # ✅ 1. 추천 알고리즘 실행 API
@@ -86,7 +154,8 @@ def recommend():
 
         for _, pop_row in high_density_areas.iterrows():
             pop_loc = (pop_row['위도'], pop_row['경도'])
-            if any(geodesic(pop_loc, (row['위도'], row['경도'])).km < safety_distance for _, row in df_child_safety.iterrows()):
+            if any(geodesic(pop_loc, (row['위도'], row['경도'])).km < safety_distance for _, row in
+                   df_child_safety.iterrows()):
                 continue
             safe_high_density_areas.append(pop_row)
 
@@ -133,7 +202,8 @@ def recommend():
         plt.figure(figsize=(10, 6))
         plt.scatter(df_noise['경도'], df_noise['위도'], c='green', label='Non-clustered (Noise)', s=50)
         plt.scatter(df_clustered['경도'], df_clustered['위도'], c='blue', label='Clustered', s=50)
-        plt.scatter(cluster_centroids['경도'], cluster_centroids['위도'], c='red', label='Cluster Centroids', s=100, marker='x')
+        plt.scatter(cluster_centroids['경도'], cluster_centroids['위도'], c='red', label='Cluster Centroids', s=100,
+                    marker='x')
         plt.legend()
         plt.title("Recommended Locations")
         plt.xlabel("Longitude")
@@ -147,6 +217,7 @@ def recommend():
     except Exception as e:
         print(f"❌ 오류 발생: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 # ✅ 2. 기존 수거함과 비교하여 필터링된 추천 좌표 반환 API
 @app.route('/recommend/compare', methods=['POST'])
@@ -284,6 +355,7 @@ def upload_multiple_files():
     except Exception as e:
         print(f"❌ 업로드 오류: {e}")
         return jsonify({"error": str(e)}), 500
+
 
 if __name__ == '__main__':
     app.run(port=5000)
