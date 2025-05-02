@@ -108,7 +108,7 @@ def get_coordinates():
         return jsonify({'error': str(e)}), 500
 
 
-# ✅ 1. 추천 알고리즘 실행 API
+# ✅ 1. 추천 알고리즘 실행API
 @app.route('/recommend', methods=['POST'])
 def recommend():
     try:
@@ -180,15 +180,26 @@ def recommend():
         df_final_filtered = df_safe.copy()
         coords = np.radians(df_final_filtered[['위도', '경도']].values)
         epsilon_radians = (400 / 1000) / 6371
-        dbscan = DBSCAN(eps=epsilon_radians, min_samples=5, metric='haversine')
+        dbscan = DBSCAN(eps=epsilon_radians, min_samples=2, metric='haversine')
         df_final_filtered['cluster'] = dbscan.fit_predict(coords)
 
-        df_clustered = df_final_filtered[df_final_filtered['cluster'] != -1]
-        df_noise = df_final_filtered[df_final_filtered['cluster'] == -1]
+        # 군집화되지 않은 좌표 (노이즈)
+        df_noise = df_final_filtered[df_final_filtered['cluster'] == -1].copy()
+        df_noise['point_type'] = 'noise'  # 군집화되지 않은 포인트 표시
+
+        # 군집화된 좌표들
+        df_clustered = df_final_filtered[df_final_filtered['cluster'] != -1].copy()
+        df_clustered['point_type'] = 'cluster_member'  # 군집에 포함된 포인트 표시
+
+        # 군집 중심점 계산
         cluster_centroids = df_clustered.groupby('cluster').agg({'위도': 'mean', '경도': 'mean'}).reset_index()
+        cluster_centroids['point_type'] = 'centroid'  # 군집 중심점 표시
+
+        # 모든 데이터를 하나의 DataFrame으로 합치기
         final_recommendations = pd.concat([
-            cluster_centroids[['위도', '경도']],
-            df_noise[['위도', '경도']]
+            cluster_centroids[['위도', '경도', 'cluster', 'point_type']],
+            df_clustered[['위도', '경도', 'cluster', 'point_type']],
+            df_noise[['위도', '경도', 'cluster', 'point_type']]
         ])
 
         print(f"✅ 군집화 완료 - 군집 수: {df_clustered['cluster'].nunique()}, 노이즈 수: {len(df_noise)}")
@@ -200,10 +211,18 @@ def recommend():
 
         print("📌 [9] 시각화 이미지 저장 중...")
         plt.figure(figsize=(10, 6))
-        plt.scatter(df_noise['경도'], df_noise['위도'], c='green', label='Non-clustered (Noise)', s=50)
-        plt.scatter(df_clustered['경도'], df_clustered['위도'], c='blue', label='Clustered', s=50)
-        plt.scatter(cluster_centroids['경도'], cluster_centroids['위도'], c='red', label='Cluster Centroids', s=100,
-                    marker='x')
+        # 군집화되지 않은 좌표 (노이즈)
+        noise_points = final_recommendations[final_recommendations['point_type'] == 'noise']
+        plt.scatter(noise_points['경도'], noise_points['위도'], c='green', label='Non-clustered (Noise)', s=50)
+
+        # 군집에 포함된 좌표들
+        cluster_members = final_recommendations[final_recommendations['point_type'] == 'cluster_member']
+        plt.scatter(cluster_members['경도'], cluster_members['위도'], c='blue', label='Cluster Members', s=50)
+
+        # 군집 중심점
+        centroids = final_recommendations[final_recommendations['point_type'] == 'centroid']
+        plt.scatter(centroids['경도'], centroids['위도'], c='red', label='Cluster Centroids', s=100, marker='x')
+
         plt.legend()
         plt.title("Recommended Locations")
         plt.xlabel("Longitude")
@@ -249,9 +268,18 @@ def compare_existing_with_recommended():
         df_recommended = pd.read_csv(recommended_file)
         print(f"📍 추천 위치 수 (CSV): {len(df_recommended)}")
 
+        # 군집 중심점과 노이즈 포인트 필터링 (실제 추천 위치로 사용)
+        df_centroids_noise = df_recommended[
+            (df_recommended['point_type'] == 'centroid') |
+            (df_recommended['point_type'] == 'noise')
+            ]
+        print(f"📍 중심점 및 노이즈 포인트 수: {len(df_centroids_noise)}")
+
         # === 비교: 기존 수거함과 100m 이내인 추천 위치 제거 ===
-        filtered_recommendations = []
-        for _, row in df_recommended.iterrows():
+        filtered_centroids_noise = []
+        valid_clusters = set()  # 유효한 군집 ID를 저장할 집합
+
+        for _, row in df_centroids_noise.iterrows():
             rec_point = (row["위도"], row["경도"])
             too_close = False
             for exist_point in existing_coords:
@@ -259,12 +287,42 @@ def compare_existing_with_recommended():
                 if distance < 0.1:  # 100m 이내
                     too_close = True
                     break
+
             if not too_close:
-                filtered_recommendations.append({"lat": rec_point[0], "lng": rec_point[1]})
+                cluster_id = int(row["cluster"])
+                filtered_centroids_noise.append({
+                    "lat": rec_point[0],
+                    "lng": rec_point[1],
+                    "point_type": row["point_type"],
+                    "cluster": cluster_id
+                })
 
-        print(f"✅ 필터링 후 추천 위치 수: {len(filtered_recommendations)}")
+                # 유효한 군집 ID 저장 (노이즈 포인트는 -1이므로 제외)
+                if cluster_id != -1:
+                    valid_clusters.add(cluster_id)
 
-        return jsonify(filtered_recommendations), 200
+        # 군집 멤버 추가 (유효한 군집에 속한 멤버만)
+        cluster_members = []
+        df_members = df_recommended[df_recommended['point_type'] == 'cluster_member']
+
+        for _, row in df_members.iterrows():
+            cluster_id = int(row["cluster"])
+            if cluster_id in valid_clusters:  # 유효한 군집에 속한 멤버만 추가
+                cluster_members.append({
+                    "lat": row["위도"],
+                    "lng": row["경도"],
+                    "point_type": "cluster_member",
+                    "cluster": cluster_id
+                })
+
+        # 모든 결과 합치기
+        all_recommendations = filtered_centroids_noise + cluster_members
+
+        print(f"✅ 필터링 후 추천 위치 수: {len(filtered_centroids_noise)} (중심점 및 노이즈)")
+        print(f"✅ 포함된 군집 멤버 수: {len(cluster_members)}")
+        print(f"✅ 총 반환 좌표 수: {len(all_recommendations)}")
+
+        return jsonify(all_recommendations), 200
 
     except Exception as e:
         print(f"❌ 오류 발생: {e}")
@@ -310,16 +368,22 @@ def upload_multiple_files():
             df = pd.read_csv(fire_file_path, encoding="cp949")
 
             from time import sleep
-            from tqdm import tqdm
 
             latitudes, longitudes, failed = [], [], []
-            for _, row in tqdm(df.iterrows(), total=len(df)):
-                address = str(row["주소"]).strip()
+            total = len(df)
+            for idx, row in enumerate(df.iterrows()):
+                _, row_data = row
+                address = str(row_data["주소"]).strip()
                 lat, lng = kakao_geocode(address)
                 latitudes.append(lat)
                 longitudes.append(lng)
                 if lat is None or lng is None:
                     failed.append(address)
+
+                # 진행 상황 출력 (10개마다 한 번씩)
+                if (idx + 1) % 10 == 0 or idx == total - 1:
+                    print(f"⏳ 주소 변환 진행 중: {idx + 1}/{total} ({((idx + 1) / total * 100):.1f}%)")
+
                 sleep(0.3)
 
             df["위도"] = latitudes
