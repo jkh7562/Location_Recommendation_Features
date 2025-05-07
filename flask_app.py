@@ -19,7 +19,7 @@ KAKAO_API_KEY = os.getenv("KAKAO_API_KEY")
 BACKEND_ORIGIN = os.getenv("BACKEND_ORIGIN")
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "http://localhost:8081"}})
+CORS(app, resources={r"/*": {"origins": BACKEND_ORIGIN}})
 
 
 # 📌 주소 → 좌표 변환 함수
