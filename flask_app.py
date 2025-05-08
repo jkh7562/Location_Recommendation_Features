@@ -238,35 +238,86 @@ def recommend():
         return jsonify({"error": str(e)}), 500
 
 
-# ✅ 2. 기존 수거함과 비교하여 필터링된 추천 좌표 반환 API
 @app.route('/recommend/compare', methods=['POST'])
 def compare_existing_with_recommended():
     try:
         print("📌 [compare] 기존 수거함과 추천 위치 비교 시작")
 
-        # === Spring Boot에서 기존 수거함 좌표 데이터 가져오기 ===
-        spring_url = f"{BACKEND_ORIGIN}/admin/findAllBox"
-        response = requests.get(spring_url, verify=False)
-        response.raise_for_status()
-        existing_boxes = response.json()
-        print(f"📦 기존 수거함 수: {len(existing_boxes)}")
+        # === 요청 본문에서 기존 수거함 데이터 가져오기 ===
+        if not request.is_json:
+            print("❌ 요청 본문이 JSON 형식이 아닙니다.")
+            return jsonify({"error": "요청 본문이 JSON 형식이어야 합니다."}), 400
+
+        existing_boxes_raw = request.json
+        print(f"📦 기존 수거함 응답 수: {len(existing_boxes_raw)}")
+
+        # 중요: 응답 구조 확인 및 처리
+        # 응답이 {'box': {...}} 형태로 중첩되어 있으므로 'box' 키 내부의 데이터를 추출
+        existing_boxes = []
+        for item in existing_boxes_raw:
+            if isinstance(item, dict) and 'box' in item:
+                existing_boxes.append(item['box'])
+            else:
+                existing_boxes.append(item)  # 중첩되지 않은 경우 그대로 사용
+
+        print(f"📦 처리된 기존 수거함 수: {len(existing_boxes)}")
+
+        # 첫 5개 박스 데이터 로깅 (또는 전체가 5개 미만이면 전체)
+        sample_size = min(5, len(existing_boxes))
+        print(f"📋 기존 수거함 샘플 데이터 ({sample_size}개):")
+        for i in range(sample_size):
+            print(f"  - Box {i + 1}: {existing_boxes[i]}")
 
         # === 기존 수거함의 좌표 파싱 ===
         existing_coords = []
-        for box in existing_boxes:
+        valid_coords_count = 0
+        invalid_coords_count = 0
+
+        print("🧮 기존 수거함 좌표 파싱 시작...")
+        for idx, box in enumerate(existing_boxes):
             location_str = box.get("location")
-            if location_str and "POINT" in location_str:
-                try:
-                    lng, lat = map(float, location_str.replace("POINT (", "").replace(")", "").split())
-                    existing_coords.append((lat, lng))  # 위도, 경도
-                except ValueError as e:
-                    print(f"⚠️ 위치 파싱 실패: {location_str}, 오류: {e}")
+            box_id = box.get("id", "알 수 없음")
+            box_name = box.get("name", "이름 없음")
+
+            if not location_str:
+                print(f"⚠️ 위치 정보 없음: Box ID {box_id}, Name: {box_name}")
+                invalid_coords_count += 1
+                continue
+
+            if "POINT" not in location_str:
+                print(f"⚠️ POINT 형식이 아님: Box ID {box_id}, Name: {box_name}, Location: {location_str}")
+                invalid_coords_count += 1
+                continue
+
+            try:
+                # 좌표 파싱 시도
+                coords_part = location_str.replace("POINT (", "").replace(")", "").strip()
+                lng, lat = map(float, coords_part.split())
+                existing_coords.append((lat, lng))  # 위도, 경도
+                valid_coords_count += 1
+
+                # 처음 10개와 마지막 10개 좌표만 출력 (또는 전체가 20개 미만이면 전체)
+                if idx < 10 or idx >= len(existing_boxes) - 10:
+                    print(f"  ✓ Box {idx + 1} (ID: {box_id}): 위도={lat}, 경도={lng}, 원본={location_str}")
+            except ValueError as e:
+                print(f"⚠️ 위치 파싱 실패: Box ID {box_id}, Name: {box_name}, Location: {location_str}, 오류: {e}")
+                invalid_coords_count += 1
+
+        print(f"📊 좌표 파싱 결과: 성공={valid_coords_count}, 실패={invalid_coords_count}, 총={len(existing_boxes)}")
+        print(f"🗺️ 유효한 기존 수거함 좌표 수: {len(existing_coords)}")
 
         # === 추천 위치 CSV 불러오기 ===
         base_path = os.path.dirname(__file__)
         recommended_file = os.path.join(base_path, "data/산출데이터/추천_수거함_위치.csv")
+        print(f"📂 추천 위치 CSV 파일 경로: {recommended_file}")
+
+        if not os.path.exists(recommended_file):
+            print(f"❌ 추천 위치 CSV 파일이 존재하지 않습니다: {recommended_file}")
+            return jsonify({"error": "추천 위치 CSV 파일을 찾을 수 없습니다."}), 404
+
         df_recommended = pd.read_csv(recommended_file)
         print(f"📍 추천 위치 수 (CSV): {len(df_recommended)}")
+        print(f"📋 추천 위치 CSV 컬럼: {df_recommended.columns.tolist()}")
 
         # 군집 중심점과 노이즈 포인트 필터링 (실제 추천 위치로 사용)
         df_centroids_noise = df_recommended[
@@ -274,18 +325,40 @@ def compare_existing_with_recommended():
             (df_recommended['point_type'] == 'noise')
             ]
         print(f"📍 중심점 및 노이즈 포인트 수: {len(df_centroids_noise)}")
+        print(f"  - 중심점(centroid) 수: {len(df_recommended[df_recommended['point_type'] == 'centroid'])}")
+        print(f"  - 노이즈(noise) 수: {len(df_recommended[df_recommended['point_type'] == 'noise'])}")
 
-        # === 비교: 기존 수거함과 100m 이내인 추천 위치 제거 ===
+        # === 비교: 기존 수거함과 400m 이내인 추천 위치 제거 ===
         filtered_centroids_noise = []
         valid_clusters = set()  # 유효한 군집 ID를 저장할 집합
+        removed_count = 0  # 삭제된 위치 개수 카운트
+        removed_details = []  # 삭제된 위치의 상세 정보
 
-        for _, row in df_centroids_noise.iterrows():
+        print("🔍 기존 수거함과 추천 위치 비교 시작...")
+        for idx, row in df_centroids_noise.iterrows():
             rec_point = (row["위도"], row["경도"])
             too_close = False
+            closest_distance = float('inf')
+            closest_existing_point = None
+
             for exist_point in existing_coords:
                 distance = geodesic(rec_point, exist_point).km
-                if distance < 0.1:  # 100m 이내
+                if distance < closest_distance:
+                    closest_distance = distance
+                    closest_existing_point = exist_point
+
+                if distance < 0.4:  # 400m 이내
                     too_close = True
+                    removed_count += 1  # 삭제된 위치 카운트 증가
+                    removed_details.append({
+                        "추천_위도": rec_point[0],
+                        "추천_경도": rec_point[1],
+                        "기존_위도": exist_point[0],
+                        "기존_경도": exist_point[1],
+                        "거리_km": distance,
+                        "point_type": row["point_type"],
+                        "cluster": int(row["cluster"])
+                    })
                     break
 
             if not too_close:
@@ -301,9 +374,21 @@ def compare_existing_with_recommended():
                 if cluster_id != -1:
                     valid_clusters.add(cluster_id)
 
+            # 처리 진행 상황 로깅 (10% 단위)
+            if idx % max(1, len(df_centroids_noise) // 10) == 0:
+                print(f"  - 처리 중: {idx}/{len(df_centroids_noise)} ({idx / len(df_centroids_noise) * 100:.1f}%)")
+
+        # 삭제된 위치 상세 정보 로깅 (최대 10개)
+        print(f"🗑️ 삭제된 추천 위치 상세 정보 (최대 10개):")
+        for i, detail in enumerate(removed_details[:10]):
+            print(f"  - 삭제 {i + 1}: 추천({detail['추천_위도']}, {detail['추천_경도']}) ↔ " +
+                  f"기존({detail['기존_위도']}, {detail['기존_경도']}), " +
+                  f"거리={detail['거리_km']:.3f}km, 타입={detail['point_type']}, 군집={detail['cluster']}")
+
         # 군집 멤버 추가 (유효한 군집에 속한 멤버만)
         cluster_members = []
         df_members = df_recommended[df_recommended['point_type'] == 'cluster_member']
+        print(f"👥 군집 멤버 수 (전체): {len(df_members)}")
 
         for _, row in df_members.iterrows():
             cluster_id = int(row["cluster"])
@@ -319,13 +404,21 @@ def compare_existing_with_recommended():
         all_recommendations = filtered_centroids_noise + cluster_members
 
         print(f"✅ 필터링 후 추천 위치 수: {len(filtered_centroids_noise)} (중심점 및 노이즈)")
+        print(f"  - 중심점(centroid): {len([p for p in filtered_centroids_noise if p['point_type'] == 'centroid'])}")
+        print(f"  - 노이즈(noise): {len([p for p in filtered_centroids_noise if p['point_type'] == 'noise'])}")
+        print(f"✅ 삭제된 추천 위치 수: {removed_count}")  # 삭제된 위치 수 출력
         print(f"✅ 포함된 군집 멤버 수: {len(cluster_members)}")
         print(f"✅ 총 반환 좌표 수: {len(all_recommendations)}")
 
-        return jsonify(all_recommendations), 200
+        # 삭제된 위치 수를 응답 헤더에 포함
+        response = jsonify(all_recommendations)
+        response.headers['X-Removed-Locations'] = str(removed_count)
+        return response, 200
 
     except Exception as e:
+        import traceback
         print(f"❌ 오류 발생: {e}")
+        print(f"❌ 상세 오류: {traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
