@@ -426,7 +426,7 @@ def compare_existing_with_recommended():
 def upload_multiple_files():
     try:
         files = request.files
-        print("📥 수신된 파일 목록:", list(files.keys()))
+        print(f"📥 수신된 파일 목록: {list(files.keys())}")
 
         save_dir = "data/데이터초안"
         os.makedirs(save_dir, exist_ok=True)
@@ -443,19 +443,25 @@ def upload_multiple_files():
 
         saved_paths = {}
 
-        for key in files:
-            file = files[key]
+        for field_name in files:
+            file = files[field_name]
             save_path = os.path.join(save_dir, file.filename)
 
             # 인구밀도 데이터 파일 이름 변경 처리
-            if key == "population":
-                save_path = os.path.join(save_dir, "인구밀도 데이터.txt")  # 이름 변경
+            if field_name == "population":
+                save_path = os.path.join(save_dir, "인구밀도 데이터.txt")
             file.save(save_path)
-            saved_paths[key] = save_path
-            print(f"✅ 저장됨: {key} → {save_path}")
+            saved_paths[field_name] = save_path
+            print(f"✅ 저장됨: {field_name} → {save_path}, 실제 파일명: {file.filename}")  # 실제 파일명 로그 추가
+
+        # 파일 경로 확인 로그 추가
+        population_file_path = "data/데이터초안/인구밀도 데이터.txt"
+        print(f"🔍 인구밀도 파일 경로 확인: {population_file_path}")
+        print(f"   존재 여부: {os.path.exists(population_file_path)}")
+        print(f"   파일 여부: {os.path.isfile(population_file_path)}")
 
         # 🔄 소방서 주소 → 좌표 변환 처리
-        if "fireStation" in files:
+        if "fireStation" in saved_paths:
             print("📌 [자동 처리] 소방서 주소 → 좌표 변환 중...")
             fire_file_path = saved_paths["fireStation"]
             df = pd.read_csv(fire_file_path, encoding="cp949")
@@ -473,7 +479,6 @@ def upload_multiple_files():
                 if lat is None or lng is None:
                     failed.append(address)
 
-                # 진행 상황 출력 (10개마다 한 번씩)
                 if (idx + 1) % 10 == 0 or idx == total - 1:
                     print(f"⏳ 주소 변환 진행 중: {idx + 1}/{total} ({((idx + 1) / total * 100):.1f}%)")
 
@@ -486,7 +491,7 @@ def upload_multiple_files():
             print("✅ 소방서 주소 변환 완료")
 
         # 🔄 SHP → 중심 좌표 추출 처리
-        if "boundaryshp" in files:
+        if "boundaryshp" in saved_paths:
             print("📌 [자동 처리] SHP → 중심 좌표 추출 중...")
             shp_path = saved_paths["boundaryshp"]
             gdf = gpd.read_file(shp_path)
@@ -512,7 +517,6 @@ def upload_multiple_files():
     except Exception as e:
         print(f"❌ 업로드 오류: {e}")
         return jsonify({"error": str(e)}), 500
-
 
 if __name__ == '__main__':
     app.run(host='localhost', port=5000)
