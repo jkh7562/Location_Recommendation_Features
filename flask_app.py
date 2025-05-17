@@ -126,24 +126,25 @@ def recommend():
         df_population = pd.read_csv(population_density_file, delimiter='^', header=None,
                                     names=['연도', '지역코드', '지표코드', '인구밀도'])
         df_population = df_population[df_population['지표코드'] == 'to_in_003']
-        df_population_asan = df_population[df_population['지역코드'].astype(str).str.startswith("34040")].copy()
+        # 모든 지역 포함
+        df_population_filtered = df_population.copy()
 
         print("📌 [3] 위경도 매핑 중...")
         df_geo = pd.read_csv(geo_mapping_file).dropna(subset=['위도', '경도'])
-        df_population_asan = df_population_asan.merge(df_geo, on="지역코드", how="left")
+        df_population_filtered = df_population_filtered.merge(df_geo, on="지역코드", how="left")
 
         print("📌 [4] 고밀도 지역 필터링 중...")
-        df_population_asan['인구밀도평균'] = df_population_asan['인구밀도'].rolling(window=5, center=True, min_periods=1).mean()
-        df_population_asan['밀도차이'] = df_population_asan['인구밀도'] - df_population_asan['인구밀도평균']
+        df_population_filtered['인구밀도평균'] = df_population_filtered['인구밀도'].rolling(window=5, center=True, min_periods=1).mean()
+        df_population_filtered['밀도차이'] = df_population_filtered['인구밀도'] - df_population_filtered['인구밀도평균']
         density_threshold = 0.8
-        high_density_areas = df_population_asan[
-            df_population_asan['밀도차이'] > df_population_asan['밀도차이'].quantile(density_threshold)].copy()
+        high_density_areas = df_population_filtered[
+            df_population_filtered['밀도차이'] > df_population_filtered['밀도차이'].quantile(density_threshold)].copy()
 
         min_recommendations = 20
         while len(high_density_areas) < min_recommendations and density_threshold > 0.5:
             density_threshold -= 0.05
-            high_density_areas = df_population_asan[
-                df_population_asan['밀도차이'] > df_population_asan['밀도차이'].quantile(density_threshold)].copy()
+            high_density_areas = df_population_filtered[
+                df_population_filtered['밀도차이'] > df_population_filtered['밀도차이'].quantile(density_threshold)].copy()
 
         print(f"✅ 고밀도 지역 후보 개수: {len(high_density_areas)}")
 
