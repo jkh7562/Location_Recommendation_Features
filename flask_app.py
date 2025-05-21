@@ -519,5 +519,9 @@ def upload_multiple_files():
         print(f"❌ 업로드 오류: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/server-status', methods=['GET'])
+def check_server_status():
+    return jsonify({"status": "success"}), 200
+
 if __name__ == '__main__':
     app.run(host='localhost', port=5000)
